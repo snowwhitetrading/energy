@@ -1,4 +1,5 @@
 # credentials - never commit
+mongo_uri.txt
 .env
 
 # python

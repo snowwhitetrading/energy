@@ -29,5 +29,5 @@ jobs:
 
       - name: Scrape Westwood and upsert into dc_commodity.ThiTruongKhoan
         env:
-          IRIS_MONGO_URI: ${{ secrets.IRIS_MONGO_URI }}
-        run: python westwood_scraper.py --all
+          IRIS_MONGO_URI: ${{ secrets.DATABASE }}
+        run: python ThiTruongKhoan.py --all

@@ -24,11 +24,11 @@ Both loads are idempotent upserts, so the weekly scheduled run refreshes and
 extends the series instead of duplicating it.
 
 Usage:
-    python westwood_scraper.py                 # current-year page only
-    python westwood_scraper.py --years 2024 2025
-    python westwood_scraper.py --all           # every archived year + current
-    python westwood_scraper.py --no-mongo      # parse only (dry run)
-    python westwood_scraper.py --excel ThiTruongKhoan.xlsx
+    python ThiTruongKhoan.py                 # current-year page only
+    python ThiTruongKhoan.py --years 2024 2025
+    python ThiTruongKhoan.py --all           # every archived year + current
+    python ThiTruongKhoan.py --no-mongo      # parse only (dry run)
+    python ThiTruongKhoan.py --excel ThiTruongKhoan.xlsx
 """
 
 import argparse
@@ -51,25 +51,22 @@ DASHBOARD_SLUG = "offshore-energy-data-dashboard"
 # under "<slug>-<year>".
 FIRST_ARCHIVE_YEAR = 2021
 
-def _load_dotenv():
-    """Local convenience: read KEY=VALUE lines from a gitignored .env next to this file."""
-    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
-    if not os.path.exists(path):
-        return
-    with open(path, encoding="utf-8") as handle:
-        for line in handle:
-            line = line.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            key, value = line.split("=", 1)
-            os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+def _mongo_uri():
+    """Same source order as Q:/Coding/infra lib_db.py - never hard-code the secret.
+
+    env IRIS_MONGO_URI  ->  mongo_uri.txt next to this file (gitignored).
+    On CI the DATABASE repository secret is mapped to IRIS_MONGO_URI.
+    """
+    uri = os.environ.get("IRIS_MONGO_URI")
+    if uri:
+        return uri.strip()
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mongo_uri.txt")
+    if os.path.exists(path):
+        return open(path, encoding="utf-8").read().strip()
+    return None
 
 
-_load_dotenv()
-
-# Never hard-code the credential - it comes from the environment (a local .env
-# file, or the IRIS_MONGO_URI secret in GitHub Actions).
-MONGO_URI = os.environ.get("IRIS_MONGO_URI")
+MONGO_URI = _mongo_uri()
 DATABASE_NAME = os.environ.get("IRIS_MONGO_DB", "dc_commodity")
 COLLECTION_NAME = "ThiTruongKhoan"
 
@@ -483,8 +480,8 @@ def connect_mongo():
 
     if not MONGO_URI:
         raise RuntimeError(
-            "IRIS_MONGO_URI is not set - put it in a .env file next to this script "
-            "(local) or in the repository secrets (GitHub Actions)"
+            "Thieu URI MongoDB. Dat bien moi truong IRIS_MONGO_URI, hoac tao file "
+            "mongo_uri.txt (da gitignore) cung thu muc."
         )
     kwargs = {"serverSelectionTimeoutMS": 30000}
     try:
