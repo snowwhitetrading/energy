@@ -1,0 +1,18 @@
+# credentials - never commit
+.env
+
+# python
+.venv/
+__pycache__/
+*.pyc
+
+# scraper output / runtime
+logs/
+ThiTruongKhoan.xlsx
+
+# local data workbooks (large binaries, not source)
+*.xlsx
+
+# CHUA HARDCODE CREDENTIAL - sua thanh env var truoc khi bo dong nay di
+Company.py
+Industry.py

@@ -1,0 +1,33 @@
+name: Westwood jackup scrape
+
+on:
+  schedule:
+    # 11:00 UTC Friday = 18:00 Friday in Vietnam (ICT, UTC+7).
+    # GitHub runs scheduled jobs on a best-effort basis and can be 5-30 minutes
+    # late at peak times; --all makes every run self-healing anyway.
+    - cron: "0 11 * * 5"
+  workflow_dispatch: {}
+
+concurrency:
+  group: westwood-scrape
+  cancel-in-progress: false
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Scrape Westwood and upsert into dc_commodity.ThiTruongKhoan
+        env:
+          IRIS_MONGO_URI: ${{ secrets.IRIS_MONGO_URI }}
+        run: python westwood_scraper.py --all

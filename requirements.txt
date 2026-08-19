@@ -1,0 +1,6 @@
+pymongo>=4.16
+certifi>=2024.2.2
+
+# Optional - only needed for the --excel export, which the scheduled run skips.
+# pandas>=2.2
+# openpyxl>=3.1
