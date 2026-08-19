@@ -6,6 +6,11 @@ on:
     # GitHub runs scheduled jobs on a best-effort basis and can be 5-30 minutes
     # late at peak times; --all makes every run self-healing anyway.
     - cron: "0 11 * * 5"
+  # Editing ThiTruongKhoan.csv (here or on github.com) reloads it straight away.
+  push:
+    branches: [main]
+    paths:
+      - "ThiTruongKhoan.csv"
   workflow_dispatch: {}
 
 concurrency:
@@ -27,7 +32,12 @@ jobs:
 
       - run: pip install -r requirements.txt
 
-      - name: Scrape Westwood and upsert into dc_commodity.ThiTruongKhoan
+      - name: Scrape Westwood into dc_commodity.ThiTruongKhoan
         env:
           IRIS_MONGO_URI: ${{ secrets.DATABASE }}
         run: python ThiTruongKhoan.py --all
+
+      - name: Load the South East Asia series from ThiTruongKhoan.csv
+        env:
+          IRIS_MONGO_URI: ${{ secrets.DATABASE }}
+        run: python ThiTruongKhoan.py --import-sea

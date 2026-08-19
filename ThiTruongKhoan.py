@@ -20,11 +20,11 @@ apart by the "dataset" field:
       values = {"Committed Jackup Rig Count", "Marketed Committed Utilisation",
                 "Total Utilisation", "Contract Backlog"}
 
-3. South East Asia day rate / utilisation (--import-xlsx)
+3. South East Asia day rate / utilisation (--import-sea)
    -> dataset "monthly_sea_dayrate_utilisation", ticker "South East Asia",
       one document per month: values = {"Day Rate", "Utilisation Rate"}.
-   Read from a local Excel workbook, not scraped, so it is a manual run - the
-   scheduled CI job only refreshes the two Westwood series above.
+   Read from ThiTruongKhoan.csv in the repo, not scraped. Edit that file (on
+   github.com or locally) and CI reloads it on the next run.
 
 Every load is an idempotent upsert, so the weekly scheduled run refreshes and
 extends the series instead of duplicating it.
@@ -34,7 +34,7 @@ Usage:
     python ThiTruongKhoan.py --years 2024 2025
     python ThiTruongKhoan.py --all           # every archived year + current
     python ThiTruongKhoan.py --no-mongo      # parse only (dry run)
-    python ThiTruongKhoan.py --import-xlsx ThiTruongKhoan.xlsx   # SEA sheet
+    python ThiTruongKhoan.py --import-sea               # SEA CSV
 """
 
 import argparse
@@ -83,10 +83,11 @@ DATASET_MONTHLY = "monthly_jackup_utilisation"
 TICKER_NAME = "Global Rig Count"
 
 # South East Asia day rate / utilisation, imported from a local Excel workbook
-# rather than scraped (see --import-xlsx).
+# rather than scraped (see --import-sea).
 DATASET_SEA = "monthly_sea_dayrate_utilisation"
 TICKER_SEA = "South East Asia"
 SEA_SHEET = "ThiTruongKhoan"
+SEA_CSV = "ThiTruongKhoan.csv"
 SEA_UNITS = {"Day Rate": "USD/day", "Utilisation Rate": "%"}
 
 USER_AGENT = (
@@ -590,39 +591,61 @@ def upsert(collection, docs, key_fields):
 # South East Asia day rate / utilisation, from a local Excel workbook
 # --------------------------------------------------------------------------
 
-def read_sea_excel(path, sheet=SEA_SHEET):
-    """Read the SEA sheet (date | day rate | utilisation) into documents.
+MONTH_FORMATS = ("%b-%y", "%b-%Y", "%B-%y", "%B-%Y", "%Y-%m",
+                 "%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y")
 
-    Rows where a metric is blank keep only the metric that is present - the
-    utilisation column stops part-way through the sheet.
-    """
+
+def parse_month(value):
+    """Accept 'Nov-14', '2014-11', '2014-11-01', a real date - anything sane."""
+    if isinstance(value, datetime):
+        return datetime(value.year, value.month, 1, tzinfo=timezone.utc)
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    for fmt in MONTH_FORMATS:
+        try:
+            when = datetime.strptime(text, fmt)
+        except ValueError:
+            continue
+        return datetime(when.year, when.month, 1, tzinfo=timezone.utc)
+    return None
+
+
+def read_sea_rows(path, sheet=SEA_SHEET):
+    """Return the raw (date, day rate, utilisation) rows of a CSV or xlsx file."""
+    if os.path.splitext(path)[1].lower() in (".csv", ".txt"):
+        import csv
+
+        with open(path, newline="", encoding="utf-8-sig") as handle:
+            return list(csv.reader(handle))[1:]  # row 0 is the header
+
     try:
         import openpyxl
     except ImportError:
-        raise RuntimeError("openpyxl is required to import an Excel workbook: pip install openpyxl")
-
+        raise RuntimeError("openpyxl is required to read an .xlsx file: pip install openpyxl")
     book = openpyxl.load_workbook(path, data_only=True, read_only=True)
     try:
         if sheet not in book.sheetnames:
             raise RuntimeError("sheet %r not found in %s (co: %s)"
                                % (sheet, path, ", ".join(book.sheetnames)))
-        rows = list(book[sheet].iter_rows(values_only=True))
+        return list(book[sheet].iter_rows(values_only=True))[1:]
     finally:
         book.close()
 
+
+def read_sea_series(path, sheet=SEA_SHEET):
+    """Build the South East Asia documents from a CSV or xlsx source.
+
+    Rows keep only the metrics actually present - the utilisation column stops
+    part-way down the sheet, so those months carry a day rate alone.
+    """
     documents = []
-    for cells in rows[1:]:  # row 0 is the header
-        if not cells or cells[0] is None:
-            continue
-        when = cells[0]
-        if isinstance(when, str):
-            try:
-                when = datetime.strptime(when.strip()[:10], "%Y-%m-%d")
-            except ValueError:
-                continue
-        if not isinstance(when, datetime):
-            continue
-        when = datetime(when.year, when.month, 1, tzinfo=timezone.utc)
+    for cells in read_sea_rows(path, sheet):
+        when = parse_month(cells[0] if cells else None)
+        if when is None:
+            continue  # blank padding rows, or a stray label
 
         values = {}
         for name, index in (("Day Rate", 1), ("Utilisation Rate", 2)):
@@ -649,28 +672,31 @@ def read_sea_excel(path, sheet=SEA_SHEET):
     return documents
 
 
-def import_sea_excel(path, sheet, dry_run):
-    documents = read_sea_excel(path, sheet)
+def import_sea_series(path, sheet, dry_run):
+    documents = read_sea_series(path, sheet)
     print("=" * 70)
-    print("Import %s [%s] -> %s.%s" % (path, sheet, DATABASE_NAME, COLLECTION_NAME))
+    print("Import %s -> %s.%s [%s]" % (path, DATABASE_NAME, COLLECTION_NAME, TICKER_SEA))
     print("=" * 70)
     if not documents:
-        raise RuntimeError("khong doc duoc dong nao tu sheet %r" % sheet)
+        raise RuntimeError("khong doc duoc dong nao tu %s" % path)
 
     with_util = sum(1 for d in documents if "Utilisation Rate" in d["values"])
-    print("\nDoc %d thang: %s -> %s" % (len(documents),
-                                        documents[0]["date_text"], documents[-1]["date_text"]))
+    print("")
+    print("Doc %d thang: %s -> %s" % (len(documents),
+                                      documents[0]["date_text"], documents[-1]["date_text"]))
     print("  co ca day rate + utilisation : %d" % with_util)
     print("  chi co day rate              : %d" % (len(documents) - with_util))
     for doc in documents[-3:]:
         print("  %s  %s" % (doc["date_text"], doc["values"]))
 
     if dry_run:
-        print("\n--no-mongo set, nothing written to MongoDB.")
+        print("")
+        print("--no-mongo set, nothing written to MongoDB.")
         return 0
 
     client = connect_mongo()
-    print("\nConnected to MongoDB (%s)" % DATABASE_NAME)
+    print("")
+    print("Connected to MongoDB (%s)" % DATABASE_NAME)
     try:
         collection = client[DATABASE_NAME][COLLECTION_NAME]
         collection.create_index([("ticker", 1), ("dataset", 1), ("date", 1)])
@@ -694,15 +720,17 @@ def main():
     parser.add_argument("--no-mongo", action="store_true",
                         help="parse only, do not write to MongoDB")
     parser.add_argument("--json", dest="json_path", help="dump parsed data to a JSON file")
-    parser.add_argument("--import-xlsx", dest="xlsx_path",
-                        help="import the South East Asia day rate / utilisation sheet "
-                             "from an Excel workbook instead of scraping")
+    parser.add_argument("--import-sea", dest="sea_path", nargs="?", const=SEA_CSV,
+                        help="import the South East Asia day rate / utilisation series "
+                             "from a CSV (or .xlsx) file instead of scraping "
+                             "(default: %s)" % SEA_CSV)
     parser.add_argument("--sheet", default=SEA_SHEET,
-                        help="sheet name for --import-xlsx (default: %(default)s)")
+                        help="sheet name when --import-sea points at an .xlsx "
+                             "(default: %(default)s)")
     args = parser.parse_args()
 
-    if args.xlsx_path:
-        return import_sea_excel(args.xlsx_path, args.sheet, args.no_mongo)
+    if args.sea_path:
+        return import_sea_series(args.sea_path, args.sheet, args.no_mongo)
 
     years = list(args.years)
     if args.all:
