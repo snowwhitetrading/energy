@@ -1,2 +1,6 @@
 pymongo>=4.16
 certifi>=2024.2.2
+
+# Only needed for --import-xlsx (the manual South East Asia load); the
+# scheduled CI job does not use it.
+# openpyxl>=3.1
