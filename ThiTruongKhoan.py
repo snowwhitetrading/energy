@@ -28,7 +28,6 @@ Usage:
     python ThiTruongKhoan.py --years 2024 2025
     python ThiTruongKhoan.py --all           # every archived year + current
     python ThiTruongKhoan.py --no-mongo      # parse only (dry run)
-    python ThiTruongKhoan.py --excel ThiTruongKhoan.xlsx
 """
 
 import argparse
@@ -573,30 +572,6 @@ def upsert(collection, docs, key_fields):
     return result.upserted_count, result.modified_count
 
 
-def write_excel(path, docs):
-    """Mirror the collection to one flat sheet (values unpacked into columns)."""
-    try:
-        import pandas as pd
-    except ImportError:
-        print("  ! pandas not available - skipping Excel export")
-        return
-    rows = []
-    for doc in docs:
-        row = {
-            "ticker": doc["ticker"],
-            "dataset": doc["dataset"],
-            "frequency": doc["frequency"],
-            "date_text": doc["date_text"],
-        }
-        row.update(doc["values"])
-        row["source_url"] = doc["source_url"]
-        rows.append(row)
-    df = pd.DataFrame(rows).sort_values(["dataset", "date_text"])
-    with pd.ExcelWriter(path, engine="openpyxl") as writer:
-        df.to_excel(writer, sheet_name="ThiTruongKhoan", index=False)
-    print("  Excel written: %s" % path)
-
-
 # --------------------------------------------------------------------------
 
 def main():
@@ -609,8 +584,6 @@ def main():
                         help="skip the current-year (bare slug) page")
     parser.add_argument("--no-mongo", action="store_true",
                         help="parse only, do not write to MongoDB")
-    parser.add_argument("--excel", nargs="?", const="ThiTruongKhoan.xlsx",
-                        help="also write the parsed data to an Excel workbook")
     parser.add_argument("--json", dest="json_path", help="dump parsed data to a JSON file")
     args = parser.parse_args()
 
@@ -686,9 +659,6 @@ def main():
         with open(args.json_path, "w", encoding="utf-8") as handle:
             json.dump(documents, handle, indent=2, default=str)
         print("  JSON written: %s" % args.json_path)
-
-    if args.excel:
-        write_excel(args.excel, documents)
 
     if args.no_mongo:
         print("\n--no-mongo set, nothing written to MongoDB.")

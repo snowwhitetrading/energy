@@ -9,7 +9,6 @@ __pycache__/
 
 # scraper output / runtime
 logs/
-ThiTruongKhoan.xlsx
 
 # local data workbooks (large binaries, not source)
 *.xlsx
