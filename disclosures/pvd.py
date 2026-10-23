@@ -2,7 +2,8 @@
 PV Drilling (PVD) - quarter figures from the quarterly consolidated financial statements.
 
 Document: the quarterly consolidated BCTC ("Báo cáo tài chính hợp nhất quý X năm Y"), from
-CafeF or Vietstock, whichever downloads first (common.fetch_bctc). Published ~29-30 days after
+CafeF, Vietstock or pvdrilling.com.vn/quan-he-co-dong/bao-cao-tai-chinh (WEBSITE), whichever
+downloads first (common.fetch_bctc). Published ~29-30 days after
 quarter end (Q4 on ~30 Jan). The reviewed half-year ("Bán niên soát xét", late Aug) and the
 audited FY ("năm ... đã kiểm toán", late Mar) are NOT used: the quarterly report already has a
 this-quarter column, so no YTD subtraction is needed.
@@ -38,9 +39,13 @@ next to the PDF (common.ocr_pages) - OCR is ~10-20 s/page on a laptop CPU.
 
 import re
 
-from disclosures.common import Result, fetch_bctc, page_text, pdf_pages, to_bn
+from functools import partial
+
+from disclosures.common import Result, fetch_bctc, site_bctc, page_text, pdf_pages, to_bn
 
 TICKER = "PVD"
+# the company IR list - raced against CafeF / Vietstock by common.fetch_bctc
+WEBSITE = partial(site_bctc, "https://www.pvdrilling.com.vn/quan-he-co-dong/bao-cao-tai-chinh")
 SEGMENTS = [  # segment note rows, in order; patterns only sanity-check the OCR'd labels
     ("Trading", r"th\w?\W?\w{0,3}ng\s*m"),
     ("Drilling", r"^(?!.*gi[eế]ng).*(khoan|d[iị]ch\s*v[uụ])"),  # label may wrap: "Bộ phận cung cấp dịch vụ / khoan"
@@ -125,9 +130,9 @@ def _close(a, b, tol=0.01):
 
 def collect(q, y):
     res = Result()
-    path, doc = fetch_bctc(TICKER, q, y)
+    path, doc = fetch_bctc(TICKER, q, y, website=WEBSITE)
     if not path:
-        res.warn(f"BCTC hop nhat Q{q}/{y} chua co tren CafeF/Vietstock (thuong ~30 ngay sau khi het quy)")
+        res.warn(f"BCTC hop nhat Q{q}/{y} chua co tren CafeF/Vietstock/pvdrilling.com.vn (thuong ~30 ngay sau khi het quy)")
         return res
     res.sources.append(f"{doc['title']} ({doc['site']}) {doc['url']}")
 

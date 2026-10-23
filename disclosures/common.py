@@ -106,16 +106,19 @@ def _bctc_kind(title):
     return "quarter"
 
 
-def find_bctc(ticker, q, y):
-    """Consolidated financial statements of quarter q/y on the public filing sites - CafeF's list
-    and Vietstock's, asked in parallel. Returns [{title, kind, url, site}], the quarterly report
-    (which has a this-quarter column) before the reviewed / audited ones."""
+def find_bctc(ticker, q, y, website=None):
+    """Consolidated financial statements of quarter q/y - CafeF's list, Vietstock's and, when the
+    parser passes `website` (a callable (q, y) -> [{title, kind, url}], e.g. a `site_bctc` partial),
+    the company's own IR page, all asked in parallel. Returns [{title, kind, url, site}], the
+    quarterly report (which has a this-quarter column) before the reviewed / audited ones."""
     from concurrent.futures import ThreadPoolExecutor
 
+    listers = [("cafef", lambda: _cafef_bctc(ticker, q, y)), ("vietstock", lambda: _vietstock_bctc(ticker, q, y))]
+    if website:
+        listers.append(("website", lambda: website(q, y)))
     found = []
-    with ThreadPoolExecutor(2) as pool:
-        jobs = {site: pool.submit(lister, ticker, q, y)
-                for site, lister in (("cafef", _cafef_bctc), ("vietstock", _vietstock_bctc))}
+    with ThreadPoolExecutor(len(listers)) as pool:
+        jobs = {site: pool.submit(lister) for site, lister in listers}
         for site, job in jobs.items():
             try:
                 found += [dict(d, site=site) for d in job.result()]
@@ -125,15 +128,15 @@ def find_bctc(ticker, q, y):
     return sorted(found, key=lambda d: order[d["kind"]])
 
 
-def fetch_bctc(ticker, q, y, kinds=("quarter",)):
+def fetch_bctc(ticker, q, y, kinds=("quarter",), website=None):
     """Download the quarter's consolidated BCTC from whichever site answers first.
 
-    Every copy of the best available kind (CafeF and Vietstock usually both have it) is fetched
-    in parallel; the first complete PDF wins. Returns (path, {title, kind, url, site}) or
-    (None, None) when neither site lists the report yet."""
+    Every copy of the best available kind (CafeF, Vietstock and the company website usually all
+    have it) is fetched in parallel; the first complete PDF wins. Returns
+    (path, {title, kind, url, site}) or (None, None) when no site lists the report yet."""
     from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 
-    docs = find_bctc(ticker, q, y)
+    docs = find_bctc(ticker, q, y, website)
     for kind in kinds:
         cands = [d for d in docs if d["kind"] == kind]
         if not cands:
@@ -167,6 +170,32 @@ def _cafef_bctc(ticker, q, y):
         kind = _bctc_kind(r.get("Name") or "")
         if kind and r.get("Quarter") == q and r.get("Year") == y and r.get("Link"):
             out.append({"title": r["Name"], "kind": kind, "url": r["Link"]})
+    return out
+
+
+def title_matches(title, kind, q, y):
+    """Does a BCTC title name quarter q/y? Reviewed half-year reports count for Q2, audited
+    annual ones for Q4 (they carry the full year, used only when no quarterly report exists)."""
+    t = _flat(title)
+    if kind == "quarter":
+        return bool(re.search(period_words(q, y), t))
+    if kind == "reviewed":
+        return q == 2 and str(y) in t
+    return q == 4 and str(y) in t and not re.search(r"qu[yý]\s*[1-3]|q\s*[1-3]", t)
+
+
+def site_bctc(url, q, y):
+    """BCTC links of a company IR page that lists reports as plain <a href=...pdf>title</a>
+    (ptsc.com.vn, pvdrilling.com.vn...): [{title, kind, url}] for quarter q/y."""
+    html = fetch(url).decode("utf-8", "replace")
+    out = []
+    for href, text in re.findall(r'<a[^>]+href="([^"]+)"[^>]*>(.*?)</a>', html, flags=re.S | re.I):
+        title = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", text)).strip()
+        kind = _bctc_kind(title)
+        if kind and title_matches(title, kind, q, y):
+            link = urljoin(url, href.replace("&amp;", "&"))
+            if link not in [d["url"] for d in out]:
+                out.append({"title": title, "kind": kind, "url": link})
     return out
 
 

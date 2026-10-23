@@ -1,9 +1,8 @@
 """
 Petrolimex (PLX) - quarter figures from the quarterly consolidated financial statements.
 
-Document: the quarterly consolidated BCTC from CafeF or Vietstock, whichever downloads first
-(common.fetch_bctc); the petrolimex.com.vn IR list (its CMS search API, `_reports()`) is a
-fallback for when neither lists it yet.
+Document: the quarterly consolidated BCTC from CafeF, Vietstock or petrolimex.com.vn (its IR
+list is filled from a CMS search API, `_reports()`), whichever downloads first (common.fetch_bctc).
 Published ~30 days after quarter end (Q1 ~4 May, Q2 ~30 Jul, Q3 ~30 Oct, Q4 ~30 Jan), together
 with the parent-only report ("Công ty mẹ", skipped) and a "Giải trình" letter (profit only).
 The reviewed half-year ("6 tháng ... sau soát xét", late Aug) and audited FY ("năm ... sau kiểm
@@ -42,7 +41,7 @@ import itertools
 import json
 import re
 
-from disclosures.common import (UA, Result, download, fetch_bctc, page_text, pdf_pages, period_words,
+from disclosures.common import (UA, Result, fetch_bctc, page_text, pdf_pages, period_words,
                                 prev_quarter, to_bn)
 
 TICKER = "PLX"
@@ -108,20 +107,19 @@ def _reports(pages=3):
     return out
 
 
+def _website(q, y):
+    """The quarter's consolidated BCTC on petrolimex.com.vn/bao-cao-nha-dau-tu.html (CMS API) as
+    [{title, kind, url}] - one of the three sources common.fetch_bctc races."""
+    pattern = r"(?:BCTC|b[áa]o\s*c[áa]o\s*t[àa]i\s*ch[íi]nh)\s*(?:h[ợo]p\s*nh[ấa]t|HN).*" + period_words(q, y)
+    return [{"title": d["title"], "kind": "quarter", "url": d["url"]} for d in _reports()
+            if re.search(pattern, d["title"], re.I) and not re.search(NOT_QUARTERLY, d["title"], re.I)]
+
+
 def _report(q, y, res):
-    """(local path, source label) of the quarter's consolidated BCTC: CafeF / Vietstock first,
-    the petrolimex.com.vn IR list as a fallback. (None, None) when it is not out yet."""
-    path, doc = fetch_bctc(TICKER, q, y)
-    if path:
-        return path, f"{doc['title']} ({doc['site']}) {doc['url']}"
-    pattern = r"(?:BCTC|b[áa]o\s*c[áa]o\s*t[àa]i\s*ch[íi]nh)\s*(?:h[ợo]p\s*nh[ấa]t|HN).*" + period_words(q, y)
-    try:
-        docs = _reports()
-    except Exception as exc:  # API down -> nothing to read; say so instead of guessing
-        res.warn(f"petrolimex.com.vn report list failed: {exc}")
-        docs = []
-    docs = [d for d in docs if re.search(pattern, d["title"], re.I) and not re.search(NOT_QUARTERLY, d["title"], re.I)]
-    return (download(docs[0]["url"], TICKER), docs[0]["url"]) if docs else (None, None)
+    """(local path, source label) of the quarter's consolidated BCTC from CafeF, Vietstock or
+    petrolimex.com.vn, whichever downloads first. (None, None) when it is not out yet."""
+    path, doc = fetch_bctc(TICKER, q, y, website=_website)
+    return (path, f"{doc['title']} ({doc['site']}) {doc['url']}") if path else (None, None)
 
 
 # --------------------------------------------------------------------------

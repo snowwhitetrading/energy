@@ -1,7 +1,7 @@
 """
 PTSC (PVS) - quarter figures from the quarterly consolidated financial statements.
 
-Document: the quarterly consolidated BCTC from CafeF or Vietstock, whichever downloads first
+Document: the quarterly consolidated BCTC from CafeF, Vietstock or ptsc.com.vn (WEBSITE), whichever downloads first
 (common.fetch_bctc) - CafeF/HNX ship PTSC's English edition, ptsc.com.vn a bilingual one, so the
 P&L labels below match both languages. Published ~28-29 days after quarter end (Q1 late Apr, Q2 ~29 Jul,
 Q3 ~22 Oct, Q4 ~28 Jan). Not used: the separate ("Công ty mẹ") report, the reviewed half-year
@@ -44,9 +44,13 @@ segment totals vs P&L. OCR ~1 min/page on a busy machine; a cold run reads ~3-6 
 
 import re
 
-from disclosures.common import Result, fetch_bctc, ocr_pages, page_text, pdf_pages, prev_quarter, to_bn
+from functools import partial
+
+from disclosures.common import Result, fetch_bctc, site_bctc, ocr_pages, page_text, pdf_pages, prev_quarter, to_bn
 
 TICKER = "PVS"
+# the company IR list - raced against CafeF / Vietstock by common.fetch_bctc
+WEBSITE = partial(site_bctc, "https://www.ptsc.com.vn/co-dong/danh-cho-co-dong/bao-cao-tai-chinh")
 SEGMENTS = ["OSV", "FSO/FPSO", "ROV & geophysical", "Supply base & ports", "M&C", "O&M", "Others"]
 AMOUNT = r"(?<![\d.,])(?:\(?-?\d{1,3}(?:[.,]{1,2}\s?\d{2,3})+\)?|\(?-?\d{1,3}\)?(?=\s|$))"
 PNL = {  # CSV column -> label on the P&L line, Vietnamese | English (OCR text, accents mostly lost)
@@ -145,7 +149,7 @@ def _segments(path, res):
 
 def _read(q, y, res, need_pnl=True):
     """(pnl, segments) of the quarterly consolidated FS of q/y, or (None, None) if not out."""
-    path, doc = fetch_bctc(TICKER, q, y)
+    path, doc = fetch_bctc(TICKER, q, y, website=WEBSITE)
     if not path:
         return None, None
     res.sources.append(f"{doc['title']} ({doc['site']}) {doc['url']}")
@@ -158,7 +162,7 @@ def collect(q, y):
     res = Result()
     pnl, seg = _read(q, y, res)
     if pnl is None:
-        res.warn(f"BCTC hop nhat Q{q}/{y} chua co tren CafeF/Vietstock - chua cong bo?")
+        res.warn(f"BCTC hop nhat Q{q}/{y} chua co tren CafeF/Vietstock/ptsc.com.vn - chua cong bo?")
         return res
 
     for col in PNL:
