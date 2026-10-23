@@ -43,7 +43,7 @@ from disclosures.common import Result, fetch_bctc, page_text, pdf_pages, to_bn
 TICKER = "PVD"
 SEGMENTS = [  # segment note rows, in order; patterns only sanity-check the OCR'd labels
     ("Trading", r"th\w?\W?\w{0,3}ng\s*m"),
-    ("Drilling", r"^(?!.*gi[eế]ng).*(khoan|d[iị]chs*v[uụ])"),
+    ("Drilling", r"^(?!.*gi[eế]ng).*(khoan|d[iị]ch\s*v[uụ])"),  # label may wrap: "Bộ phận cung cấp dịch vụ / khoan"
     ("Well services", r"gi[eế]ng|thu\W?[aậ]t"),
 ]
 AMOUNT = r"\(?-?\d{1,3}(?:[.,]\s?\d{3})+\)?"
