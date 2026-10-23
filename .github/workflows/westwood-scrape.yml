@@ -1,11 +1,9 @@
 name: Westwood jackup scrape
 
+# The weekly scrape runs on the Windows server (setup_server.ps1, Friday 18:00); this workflow
+# remains for manual runs and reloads ThiTruongKhoan.csv when it is edited on github.com.
+
 on:
-  schedule:
-    # 11:00 UTC Friday = 18:00 Friday in Vietnam (ICT, UTC+7).
-    # GitHub runs scheduled jobs on a best-effort basis and can be 5-30 minutes
-    # late at peak times; --all makes every run self-healing anyway.
-    - cron: "0 11 * * 5"
   # Editing ThiTruongKhoan.csv (here or on github.com) reloads it straight away.
   push:
     branches: [main]

@@ -1,5 +1,6 @@
 """
-Unattended run of the oil & gas disclosure updaters (scheduled in GitHub Actions).
+Unattended run of the oil & gas disclosure updaters - scheduled daily on the Windows server
+(setup_server.ps1 / run_energy.ps1); the GitHub workflow "Oil & gas disclosures" is a manual backup.
 
 For every ticker and every quarter still "open" - ended at least WAIT days ago and at most
 GIVE_UP days ago - it checks company_<ticker>_quarterly.csv: when one of the ticker's DONE

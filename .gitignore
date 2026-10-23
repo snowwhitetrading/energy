@@ -19,3 +19,6 @@ Industry.py
 
 # disclosure PDFs cached by update_disclosure.py
 downloads/
+
+# job logs (run_energy.ps1)
+*.log
