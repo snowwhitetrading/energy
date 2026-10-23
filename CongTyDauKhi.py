@@ -382,13 +382,21 @@ def read_csv(ticker):
 UNIT = re.compile(r"\(([^)]*)\)\s*$")
 
 
+def mongo_key(column):
+    return column.replace(".", "_").lstrip("$")
+
+
+def doc_id(ticker, quarter):
+    return hashlib.md5(f"company_{ticker.lower()}_quarterly|{quarter}|{ticker}".encode("utf-8")).hexdigest()
+
+
 def to_documents(ticker, columns, rows, source_file):
     dataset = f"company_{ticker.lower()}_quarterly"
-    key = {c: c.replace(".", "_").lstrip("$") for c in columns}  # Mongo field names
+    key = {c: mongo_key(c) for c in columns}
     units = {key[c]: m.group(1) for c in columns if (m := UNIT.search(c))}
     now = datetime.now(timezone.utc)
     return [{
-        "_id": hashlib.md5(f"{dataset}|{q}|{ticker}".encode("utf-8")).hexdigest(),
+        "_id": doc_id(ticker, q),
         "dataset": dataset,
         "frequency": "quarterly",
         "date": quarter_end(q),
@@ -401,6 +409,54 @@ def to_documents(ticker, columns, rows, source_file):
         "source_file": source_file,
         "updated_at": now,
     } for q, values in rows]
+
+
+def update_quarter(ticker, quarter, values, source, overwrite=False, dry_run=False):
+    """Write one quarter of `ticker` into company_<ticker>_quarterly.csv AND dc_commodity.CongTyDauKhi.
+
+    Used by update_disclosure.py (the per-ticker disclosure skills). `values` maps CSV columns
+    to numbers (None = not disclosed, left alone). Existing cells are kept unless `overwrite`;
+    a kept cell that differs from the disclosure by more than 1% is reported as a conflict.
+    Returns (filled, conflicts): {column: (old, new)} for each.
+    """
+    if not QUARTER.match(quarter):
+        raise ValueError(f"quarter must look like 3Q2026, got {quarter!r}")
+    columns, rows = read_csv(ticker)
+    by_q = dict(rows)
+    row = by_q.setdefault(quarter, {})
+    filled, conflicts = {}, {}
+    for col, new in values.items():
+        if new is None:
+            continue
+        new = round(float(new), 4)
+        if col not in columns:
+            columns.append(col)  # new series: appended at the end of the CSV
+        old = row.get(col)
+        if old is None or overwrite:
+            if old is None or abs(old - new) > 1e-9:
+                row[col] = new
+                filled[col] = (old, new)
+        elif abs(old - new) > max(1.0, abs(old) * 0.01):
+            conflicts[col] = (old, new)
+    if dry_run or not filled:
+        return filled, conflicts
+
+    write_csv(ticker, columns, sorted(by_q.items(), key=lambda kv: qkey(kv[0])))
+    client = connect_mongo()
+    try:
+        now = datetime.now(timezone.utc)
+        sets = {f"values.{mongo_key(c)}": new for c, (_, new) in filled.items()}
+        sets.update({f"units.{mongo_key(c)}": m.group(1) for c in filled if (m := UNIT.search(c))})
+        sets.update({
+            "dataset": f"company_{ticker.lower()}_quarterly", "frequency": "quarterly",
+            "date": quarter_end(quarter), "date_text": quarter, "ticker": ticker,
+            "name": SPECS[ticker]["name"], "object": ticker, "source_file": source, "updated_at": now,
+        })
+        client[DATABASE_NAME][COLLECTION_NAME].update_one(
+            {"_id": doc_id(ticker, quarter)}, {"$set": sets, "$setOnInsert": {"created_at": now}}, upsert=True)
+    finally:
+        client.close()
+    return filled, conflicts
 
 
 def main():
@@ -420,6 +476,13 @@ def main():
         else:
             path = find_workbook(ticker)
             columns, rows = build_table(ticker, SPECS[ticker], path)
+            # quarters after the workbook's last actual come from the disclosure updaters
+            # (update_disclosure.py) - keep them, and any column they added
+            if os.path.exists(csv_path(ticker)):
+                old_cols, old_rows = read_csv(ticker)
+                newer = [(q, v) for q, v in old_rows if qkey(q) > qkey(SPECS[ticker]["last"])]
+                columns += [c for c in old_cols if c not in columns and any(v.get(c) is not None for _, v in newer)]
+                rows += newer
             write_csv(ticker, columns, rows)
             source = os.path.basename(path)
         filled = sum(1 for _, v in rows for x in v.values() if x is not None)

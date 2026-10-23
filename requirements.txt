@@ -4,3 +4,10 @@ certifi>=2024.2.2
 # Only needed for --import-xlsx (the manual South East Asia load); the
 # scheduled CI job does not use it.
 # openpyxl>=3.1
+
+# Only needed by update_disclosure.py (the oil & gas disclosure skills, run locally);
+# CI only reloads MongoDB from the CSVs.
+# pdfplumber>=0.11
+# pymupdf>=1.24
+# rapidocr-onnxruntime>=1.3
+# requests>=2.31
