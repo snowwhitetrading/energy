@@ -1,0 +1,35 @@
+name: Oil & gas company tables
+
+# The Diamond workbooks stay local (gitignored); CongTyDauKhi.py turns them into
+# company_<ticker>_quarterly.csv, which is tracked. Pushing a changed CSV (or
+# editing one on github.com) reloads dc_commodity.CongTyDauKhi from it.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "company_*_quarterly.csv"
+  workflow_dispatch: {}
+
+concurrency:
+  group: oil-gas-companies
+  cancel-in-progress: false
+
+jobs:
+  load:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Load company_*_quarterly.csv into dc_commodity.CongTyDauKhi
+        env:
+          IRIS_MONGO_URI: ${{ secrets.DATABASE }}
+        run: python CongTyDauKhi.py --from-csv
