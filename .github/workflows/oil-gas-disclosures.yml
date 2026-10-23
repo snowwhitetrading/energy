@@ -1,0 +1,85 @@
+name: Oil & gas disclosures
+
+# Daily: fill the open quarters of BSR / GAS / PLX / OIL / PVS / PVD from the companies'
+# consolidated BCTC (CafeF / Vietstock) and IR documents, straight into
+# dc_commodity.CongTyDauKhi and company_<ticker>_quarterly.csv (committed back here).
+# Quarters already complete are skipped without network calls, so most runs take seconds;
+# the run summary lists what was filled, what differs from the CSV, and REVIEW notes.
+on:
+  schedule:
+    # 01:30 UTC = 08:30 Vietnam (ICT). BCTCs land ~28-30 days after quarter end, bulletins later.
+    - cron: "30 1 * * *"
+  workflow_dispatch:
+    inputs:
+      tickers:
+        description: "Tickers (space separated, empty = all)"
+        default: ""
+      quarter:
+        description: "Force one quarter (1-4, empty = open quarters)"
+        default: ""
+      year:
+        description: "Year of the forced quarter"
+        default: ""
+      dry_run:
+        description: "Parse only, write nothing"
+        type: boolean
+        default: false
+
+concurrency:
+  group: oil-gas-disclosures
+  cancel-in-progress: false
+
+permissions:
+  contents: write   # commit the updated CSVs
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install
+        run: |
+          pip install -r requirements.txt
+          pip install pdfplumber pymupdf rapidocr-onnxruntime requests
+
+      # downloaded PDFs, OCR text and remembered note pages - saves re-OCR on later runs
+      - uses: actions/cache@v4
+        with:
+          path: downloads
+          key: disclosures-${{ github.run_id }}
+          restore-keys: disclosures-
+
+      - name: Update open quarters
+        env:
+          IRIS_MONGO_URI: ${{ secrets.DATABASE }}
+          TICKERS: ${{ inputs.tickers }}
+          QUARTER: ${{ inputs.quarter }}
+          YEAR: ${{ inputs.year }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          args=()
+          [ -n "$TICKERS" ] && args+=(--tickers $TICKERS)
+          [ -n "$QUARTER" ] && [ -n "$YEAR" ] && args+=(--quarter "$QUARTER" --year "$YEAR")
+          [ "$DRY_RUN" = "true" ] && args+=(--dry-run)
+          python auto_disclosure.py "${args[@]}"
+
+      - name: Commit updated CSVs
+        if: ${{ !inputs.dry_run }}
+        run: |
+          git add company_*_quarterly.csv
+          if git diff --cached --quiet; then
+            echo "No CSV change."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Oil & gas disclosures: $(date -u +%Y-%m-%d)"
+          git push

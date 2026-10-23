@@ -460,7 +460,7 @@ def _bulletin(q, y, res):
 def _volumes(q, y, res):
     cur, months, url = _bulletin(q, y, res)
     if cur is None:
-        res.warn(f"investor bulletin Q{q}/{y} not found (TinNganhDien) - not out yet?")
+        res.warn(f"investor bulletin Q{q}/{y} not on pvgas.com.vn yet")
         return
     res.sources.append(url)
     if months != 3 * q:
